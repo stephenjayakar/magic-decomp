@@ -23,10 +23,9 @@ def extract_assembly(data, key):
             for text_chunk in row[key]['text']:
                 # Append text parts to the instruction parts list, excluding '>' characters.
                 if 'text' in text_chunk:
-                    # Remove special characters and extra spaces
-                    cleaned_text = re.sub(r'\s{2,}', ' ', text_chunk['text']).replace('>', '').strip()
+                    cleaned_text = text_chunk['text'].replace('>', '').replace('~', '').strip()
                     instruction_parts.append(cleaned_text)
-            
+
             # Join all parts to form the full instruction
             full_instruction = ' '.join(instruction_parts).strip()
             
@@ -36,14 +35,11 @@ def extract_assembly(data, key):
                 assembly_code = parts[1]
             else:
                 assembly_code = parts[0]
-            
-            # Remove "~>" substrings
-            assembly_code = re.sub(r'~>', '', assembly_code).strip()
-            
+
             # Combine line number in hex and instruction
             assembly_with_line = f"{line_number:04x}: {assembly_code}"  # Format line number in hex with padding
             assembly_instructions.append(assembly_with_line)
-    
+
     return assembly_instructions
 
 def extract_target_asm(json_file):
