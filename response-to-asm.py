@@ -21,20 +21,20 @@ def extract_assembly(data, key):
             instruction_parts = []
             
             for text_chunk in row[key]['text']:
-                # Append text parts to the instruction parts list, excluding '>' characters.
+                # Append text parts to the instruction parts list, excluding '>' and '~' characters.
                 if 'text' in text_chunk:
-                    cleaned_text = text_chunk['text'].replace('>', '').replace('~', '').strip()
+                    cleaned_text = re.sub(r'[>~]', '', text_chunk['text']).strip()
                     instruction_parts.append(cleaned_text)
 
             # Join all parts to form the full instruction
             full_instruction = ' '.join(instruction_parts).strip()
             
-            # Remove the address part
-            parts = full_instruction.split(maxsplit=1)
+            # Remove the address part from the full instruction
+            parts = full_instruction.split(':', 1)
             if len(parts) > 1:
-                assembly_code = parts[1]
+                assembly_code = parts[1].strip()
             else:
-                assembly_code = parts[0]
+                assembly_code = parts[0].strip()
 
             # Combine line number in hex and instruction
             assembly_with_line = f"{line_number:04x}: {assembly_code}"  # Format line number in hex with padding
