@@ -3,3 +3,4 @@ output.s
 .env
 inputs/
 env/
+outputs/
