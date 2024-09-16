@@ -1,1 +1,5 @@
 input.json
+output.s
+.env
+inputs/
+env/
