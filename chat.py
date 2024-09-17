@@ -22,21 +22,25 @@ def generate_assembly_matched_c_code():
     output_file = 'outputs/assembly_output.c'
     generate_c_code(input_file, system_prompt_file, output_file)
 
+def generate_assembly_matched_c_code_o1():
+    input_file = 'inputs/assembly_input.md'
+    output_file = 'outputs/assembly_output.c'
+    generate_c_code(input_file, None, None, True)
 
-def generate_c_code(input_file, system_prompt_file, output_file):
+
+def generate_c_code(input_file, system_prompt_file, output_file, o1=False):
     # Read the input Markdown file
     with open(input_file, 'r') as file:
         user_message = file.read()
 
-    # Read system prompt
-    with open(system_prompt_file, 'r') as file:
-        system_prompt = file.read()
+    if not o1:
+        # Read system prompt
+        with open(system_prompt_file, 'r') as file:
+            system_prompt = file.read()
 
+    messages = [] if o1 else [{"role": "system", "content": system_prompt}]
     # Create the API request payload
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message}
-    ]
+    messages.append({"role": "user", "content": user_message})
 
     print ('Querying ChatGPT...')
     response = openai_client.chat.completions.create(
@@ -46,6 +50,10 @@ def generate_c_code(input_file, system_prompt_file, output_file):
 
     # Extract the output message
     output_message = response.choices[0].message.content
+
+    if o1:
+        print(output_message)
+        return
 
     # Extract only the C code from the output
     code_start = output_message.find('```c')
