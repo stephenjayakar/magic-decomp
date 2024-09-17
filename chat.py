@@ -1,6 +1,3 @@
-model = 'gpt-4o-2024-08-06'
-
-
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -8,43 +5,66 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-openai_client = OpenAI(
-    api_key=os.environ.get("OPENAI_API_KEY"),
-)
+model = 'gpt-4o-2024-08-06'
+openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Get the secret key from environment variable
+def generate_initial_c_code():
+    input_file = 'inputs/initial_input.md'
+    system_prompt_file = 'initial_system_prompt.txt'
+    output_file = 'outputs/initial_output.c'
+    generate_c_code(input_file, system_prompt_file, output_file)
 
-# Read the input Markdown file
-with open('inputs/input.md', 'r') as file:
-    user_message = file.read()
-# Read system prompt
-with open('system.txt', 'r') as file:
-    system_prompt = file.read()
+def generate_assembly_matched_c_code():
+    input_file = 'inputs/assembly_input.md'
+    system_prompt_file = 'assembly_system_prompt.txt'
+    output_file = 'outputs/assembly_output.c'
+    generate_c_code(input_file, system_prompt_file, output_file)
 
-# Create the API request payload
-messages = [
-    {"role": "system", "content": system_prompt},
-    {"role": "user", "content": user_message}
-]
+def generate_assembly_matched_c_code_o1():
+    input_file = 'inputs/assembly_input.md'
+    generate_c_code(input_file, None, None, is_o1=True)
 
-response = openai_client.chat.completions.create(model=model,
-messages=messages)
+def generate_c_code(input_file, system_prompt_file=None, output_file=None, is_o1=False):
+    # Read the input Markdown file
+    with open(input_file, 'r') as file:
+        user_message = file.read()
 
-# Extract the output message
-output_message = response.choices[0].message.content
+    messages = [{"role": "user", "content": user_message}]
 
-# Extract only the C code from the output (assuming that the output is clean and directly usable)
-# This part can be adjusted based on the specific format of the output.
-code_start = output_message.find('```c')
-code_end = output_message.rfind('```')
+    if not is_o1 and system_prompt_file:
+        # Read system prompt
+        with open(system_prompt_file, 'r') as file:
+            system_prompt = file.read()
+        messages.insert(0, {"role": "system", "content": system_prompt})
 
-if code_start != -1 and code_end != -1:
-    c_code = output_message[code_start + len('```c'):code_end].strip()
-else:
-    c_code = output_message
+    print('Querying ChatGPT...')
+    response = openai_client.chat.completions.create(
+        model=model,
+        messages=messages
+    )
 
-# Write the C code to the output file
-with open('outputs/output.c', 'w') as file:
-    file.write(c_code)
+    # Extract the output message
+    output_message = response.choices[0].message.content
 
-print("The C code has been generated and saved to outputs/output.c.")
+    if is_o1:
+        print(output_message)
+    elif output_file:
+        # Extract only the C code from the output
+        c_code = extract_c_code_from_output(output_message)
+
+        # Write the C code to the output file
+        with open(output_file, 'w') as file:
+            file.write(c_code)
+        print(f"The C code has been generated and saved to {output_file}")
+
+def extract_c_code_from_output(output_message):
+    """
+    Extracts C code from the response message.
+    """
+    code_start = output_message.find('```c')
+    code_end = output_message.rfind('```')
+
+    if code_start != -1 and code_end != -1:
+        return output_message[code_start + len('```c'):code_end].strip()
+    else:
+        return output_message.strip()
