@@ -8,13 +8,11 @@ load_dotenv()
 model = 'gpt-4o-2024-08-06'
 openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-
 def generate_initial_c_code():
     input_file = 'inputs/initial_input.md'
     system_prompt_file = 'initial_system_prompt.txt'
     output_file = 'outputs/initial_output.c'
     generate_c_code(input_file, system_prompt_file, output_file)
-
 
 def generate_assembly_matched_c_code():
     input_file = 'inputs/assembly_input.md'
@@ -24,25 +22,22 @@ def generate_assembly_matched_c_code():
 
 def generate_assembly_matched_c_code_o1():
     input_file = 'inputs/assembly_input.md'
-    output_file = 'outputs/assembly_output.c'
-    generate_c_code(input_file, None, None, True)
+    generate_c_code(input_file, None, None, is_o1=True)
 
-
-def generate_c_code(input_file, system_prompt_file, output_file, o1=False):
+def generate_c_code(input_file, system_prompt_file=None, output_file=None, is_o1=False):
     # Read the input Markdown file
     with open(input_file, 'r') as file:
         user_message = file.read()
 
-    if not o1:
+    messages = [{"role": "user", "content": user_message}]
+
+    if not is_o1 and system_prompt_file:
         # Read system prompt
         with open(system_prompt_file, 'r') as file:
             system_prompt = file.read()
+        messages.insert(0, {"role": "system", "content": system_prompt})
 
-    messages = [] if o1 else [{"role": "system", "content": system_prompt}]
-    # Create the API request payload
-    messages.append({"role": "user", "content": user_message})
-
-    print ('Querying ChatGPT...')
+    print('Querying ChatGPT...')
     response = openai_client.chat.completions.create(
         model=model,
         messages=messages
@@ -51,21 +46,25 @@ def generate_c_code(input_file, system_prompt_file, output_file, o1=False):
     # Extract the output message
     output_message = response.choices[0].message.content
 
-    if o1:
+    if is_o1:
         print(output_message)
-        return
+    elif output_file:
+        # Extract only the C code from the output
+        c_code = extract_c_code_from_output(output_message)
 
-    # Extract only the C code from the output
+        # Write the C code to the output file
+        with open(output_file, 'w') as file:
+            file.write(c_code)
+        print(f"The C code has been generated and saved to {output_file}")
+
+def extract_c_code_from_output(output_message):
+    """
+    Extracts C code from the response message.
+    """
     code_start = output_message.find('```c')
     code_end = output_message.rfind('```')
 
     if code_start != -1 and code_end != -1:
-        c_code = output_message[code_start + len('```c'):code_end].strip()
+        return output_message[code_start + len('```c'):code_end].strip()
     else:
-        c_code = output_message
-
-    # Write the C code to the output file
-    with open(output_file, 'w') as file:
-        file.write(c_code)
-
-    print(f"The C code has been generated and saved to {output_file}")
+        return output_message.strip()
