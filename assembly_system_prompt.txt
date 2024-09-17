@@ -5,6 +5,7 @@ I will give you:
 2. Context used to compile the C code.
 3. The generated assembly.
 4. The target assembly.
+5. A diff between the generated & the target
 
 I will also be providing a record of all your tries, as well as how close it is. Note that you want to ideally not regress
 

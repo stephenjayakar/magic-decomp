@@ -38,6 +38,7 @@ def generate_c_code(input_file, system_prompt_file, output_file):
         {"role": "user", "content": user_message}
     ]
 
+    print ('Querying ChatGPT...')
     response = openai_client.chat.completions.create(
         model=model,
         messages=messages
