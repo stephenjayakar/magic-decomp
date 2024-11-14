@@ -4,3 +4,6 @@ output.s
 inputs/
 env/
 outputs/
+bin/
+build/
+.DS_Store
