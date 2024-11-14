@@ -12,14 +12,16 @@ openai_client = OpenAI(
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
 
-# Get the secret key from environment variable
+with open('inputs/input.s', 'r') as asm_file:
+    asm = asm_file.read()
 
-# Read the input Markdown file
-with open('inputs/input.md', 'r') as file:
-    user_message = file.read()
+with open('prompt-template.md', 'r') as template_file:
+    template = template_file.read()
 # Read system prompt
 with open('system.txt', 'r') as file:
     system_prompt = file.read()
+
+user_message = template.replace("${ASM}", asm)
 
 # Create the API request payload
 messages = [
