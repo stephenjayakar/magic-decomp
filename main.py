@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from compile import try_compile
 
 OPENAI_MODEL = 'gpt-4o-2024-08-06'
+ASM_FILENAME = 'inputs/input.s'
 
 # Load environment variables from .env file
 load_dotenv()
@@ -16,7 +17,7 @@ openai_client = OpenAI(
 # Get all the initial file opening out of the way
 with open('system.txt', 'r') as file:
     system_prompt = file.read()
-with open('inputs/input.s', 'r') as asm_file:
+with open(ASM_FILENAME, 'r') as asm_file:
     asm = asm_file.read()
 with open('prompt-template.md', 'r') as template_file:
     initial_pass_template = template_file.read()
@@ -86,21 +87,40 @@ def fix_compiler_errors(current_compile_passes: int, last_error_message: str):
     c_code = extract_c_from_openai_response(response)
     write_c_file(current_compile_passes, c_code)
 
+def diff_asm(successful_pass: int):
+    os.system(f'cp outputs/temp.o asm-differ/main.o')
+    os.system(f'cp outputs/expected.o asm-differ/expected/main.o')
+    # TODO(sjayakar): figure out how to get `f1`
+    os.system('cd asm-differ && python3 diff.py -o -f main.o f1')
+
+# Convert .s to .o for eventually comparing output.o files
+def assemble_base():
+    os.system(f'bin/powerpc-eabi-as -I inputs inputs/input.s')
+    os.system('mv a.out outputs/expected.o')
+    if not os.path.exists('outputs/expected.o'):
+        raise FileNotFoundError("failed to assemble")
+
 def main():
     # clean()
+    assemble_base()
     # initial_pass()
-    compiled_successfully, message = try_compile('outputs/output-0.c')
-    compile_passes = 0
-    while not compiled_successfully:
-        # handling
-        compile_passes += 1
-        print(f'starting compile pass {compile_passes}, last error message: {message}')
-        fix_compiler_errors(compile_passes, message)
-        # at the end, do it again
-        # TODO: change filename
-        compiled_successfully, message = try_compile(f'outputs/output-{compile_passes}.c')
-        break
-    # it finally succeeded!
+
+    # compiled_successfully, message = try_compile('outputs/output-0.c')
+    # compile_passes = 0
+    # while not compiled_successfully:
+    #     # handling
+    #     compile_passes += 1
+    #     print(f'starting compile pass {compile_passes}, last error message: {message}')
+    #     fix_compiler_errors(compile_passes, message)
+    #     # at the end, do it again
+    #     # TODO: change filename
+    #     compiled_successfully, message = try_compile(f'outputs/output-{compile_passes}.c')
+    #     break
+    # successful_pass = compile_passes
+    # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
+    successful_pass = 1
+
+    diff_asm(successful_pass) # should just print the score
 
 
 
