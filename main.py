@@ -6,6 +6,7 @@ from compile import try_compile
 
 OPENAI_MODEL = 'gpt-4o-2024-08-06'
 ASM_FILENAME = 'inputs/input.s'
+M2C_OUTPUT_FILENAME = 'outputs/m2c-output.c'
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,6 +24,8 @@ with open('prompt-template.md', 'r') as template_file:
     initial_pass_template = template_file.read()
 with open('prompt-template-error.md', 'r') as template_file:
     error_template = template_file.read()
+with open('error-foreach.md', 'r') as template_file:
+    error_foreach_template = template_file.read()
 
 def extract_c_from_openai_response(response):
     # Extract the output message
@@ -41,7 +44,13 @@ def extract_c_from_openai_response(response):
 
 def initial_pass():
     print('Querying ChatGPT for the first .c file...')
+
+    # TODO(sjayakar): not sure if this is the best place to open the file
+    with open(M2C_OUTPUT_FILENAME, 'r') as m2c_file:
+        m2c_output = m2c_file.read()
+
     user_message = initial_pass_template.replace("${ASM}", asm)
+    user_message = user_message.replace('${M2C_OUTPUT}', m2c_output)
 
     # TODO: figure out the right abstraction with openai messages
     messages = [
@@ -67,14 +76,24 @@ def clean():
     print('Removed all files in output directory')
 
 
-# TODO: for now we're just passing in the last error message & file. we can actually have a train of these
-def fix_compiler_errors(current_compile_passes: int, last_error_message: str):
-    previous_filename = f'outputs/output-{current_compile_passes - 1}.c'
-    with open(previous_filename, 'r') as previous_c_file:
-        old_c_code = previous_c_file.read()
+# TODO(sjayakar): this is silly on multiple levels. i read more and
+# more files based on # of passes, and I could have just held it in
+# memory 😭.
+def fix_compiler_errors(current_compile_passes: int):
+    # TODO: read all sources & error messages
+    templated_messages = []
+    for i in range(current_compile_passes):
+        with open(f'outputs/output-{i}.c', 'r') as c_file:
+            c = c_file.read()
+        with open(f'outputs/output-{i}.error', 'r') as err_file:
+            err = err_file.read()
+        message = error_foreach_template.replace('${C}', c)
+        message = message.replace('${ERRORS}', err)
+        templated_messages.append(message)
     user_message = error_template.replace("${ASM}", asm)
-    user_message = user_message.replace('${C}', old_c_code)
-    user_message = user_message.replace('${ERRORS}', last_error_message)
+    user_message = user_message.replace('${ERRORS}', '\n\n'.join(templated_messages))
+    with open(f'outputs/tmp-message-{current_compile_passes}.md', 'w') as msg_file:
+        msg_file.write(user_message)
 
     # TODO: figure out the right abstraction with openai messages
     messages = [
@@ -102,19 +121,34 @@ def assemble_base():
     if not os.path.exists('outputs/expected.o'):
         raise FileNotFoundError("failed to assemble")
 
+# Get the default output of m2c to help ground the ChatGPT response
+def m2c():
+    print('Running m2c...')
+    os.system(f'python3 ../m2c/m2c.py --target ppc-mwcc-c inputs/input.s > {M2C_OUTPUT_FILENAME}')
+    if not os.path.exists('outputs/m2c-output.c'):
+        raise FileNotFoundError("m2c failed")
+
+def compile_and_log_error(base_name):
+    compiled_successfully, message = try_compile(f'outputs/{base_name}.c')
+    if not compiled_successfully:
+        with open(f'outputs/{base_name}.error', 'w') as error_file:
+            error_file.write(message)
+    return compiled_successfully
+
 def main():
     clean()
     assemble_base()
+    m2c()
     initial_pass()
 
-    compiled_successfully, message = try_compile('outputs/output-0.c')
+    compiled_successfully = compile_and_log_error('output-0')
     compile_passes = 0
     while not compiled_successfully:
         compile_passes += 1
-        print(f'starting compile pass {compile_passes}, last error message: {message}')
-        fix_compiler_errors(compile_passes, message)
+        print(f'did not compile, starting compile pass {compile_passes}')
+        fix_compiler_errors(compile_passes)
 
-        compiled_successfully, message = try_compile(f'outputs/output-{compile_passes}.c')
+        compiled_successfully = compile_and_log_error(f'output-{compile_passes}')
     successful_pass = compile_passes
     # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
 
