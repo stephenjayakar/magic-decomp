@@ -1,0 +1,10 @@
+### mwcceppc.exe Compiler:
+#    File: outputs\output-0.c
+# ---------------------------
+#      12: return NULL;
+#   Error:        ^^^^
+#   undefined identifier 'NULL'
+### mwcceppc.exe Compiler:
+#      33: struct Node *first_node = NULL;
+#   Error:                           ^^^^
+#   undefined identifier 'NULL'
