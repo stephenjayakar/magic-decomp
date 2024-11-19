@@ -16,4 +16,4 @@ It has the following errors
 ${ERRORS}
 ```
 
-Can you rewrite the C program with the same functionality and fix the errors?
+Can you rewrite the C program with the same functionality and fix the errors? Make sure it compiles with old C standards, and has no includes!

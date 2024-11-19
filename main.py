@@ -6,6 +6,7 @@ from compile import try_compile
 
 OPENAI_MODEL = 'gpt-4o-2024-08-06'
 ASM_FILENAME = 'inputs/input.s'
+M2C_OUTPUT_FILENAME = 'outputs/m2c-output.c'
 
 # Load environment variables from .env file
 load_dotenv()
@@ -41,7 +42,13 @@ def extract_c_from_openai_response(response):
 
 def initial_pass():
     print('Querying ChatGPT for the first .c file...')
+
+    # TODO(sjayakar): not sure if this is the best place to open the file
+    with open(M2C_OUTPUT_FILENAME, 'r') as m2c_file:
+        m2c_output = m2c_file.read()
+
     user_message = initial_pass_template.replace("${ASM}", asm)
+    user_message = user_message.replace('${M2C_OUTPUT}', m2c_output)
 
     # TODO: figure out the right abstraction with openai messages
     messages = [
@@ -102,9 +109,17 @@ def assemble_base():
     if not os.path.exists('outputs/expected.o'):
         raise FileNotFoundError("failed to assemble")
 
+# Get the default output of m2c to help ground the ChatGPT response
+def m2c():
+    print('Running m2c...')
+    os.system(f'python3 ../m2c/m2c.py --target ppc-mwcc-c inputs/input.s > {M2C_OUTPUT_FILENAME}')
+    if not os.path.exists('outputs/m2c-output.c'):
+        raise FileNotFoundError("m2c failed")
+
 def main():
     clean()
     assemble_base()
+    m2c()
     initial_pass()
 
     compiled_successfully, message = try_compile('outputs/output-0.c')
