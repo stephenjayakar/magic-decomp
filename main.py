@@ -40,6 +40,7 @@ def extract_c_from_openai_response(response):
     return c_code
 
 def initial_pass():
+    print('Querying ChatGPT for the first .c file...')
     user_message = initial_pass_template.replace("${ASM}", asm)
 
     # TODO: figure out the right abstraction with openai messages
@@ -62,7 +63,7 @@ def write_c_file(pass_number, c_code):
     print(f"The C code has been generated and saved to outputs/output-{pass_number}.c.")
 
 def clean():
-    os.system('rm output/*')
+    os.system('rm outputs/*')
     print('Removed all files in output directory')
 
 
@@ -95,30 +96,27 @@ def diff_asm(successful_pass: int):
 
 # Convert .s to .o for eventually comparing output.o files
 def assemble_base():
+    print('Assembling the .s file to get expected.o')
     os.system(f'bin/powerpc-eabi-as -I inputs inputs/input.s')
     os.system('mv a.out outputs/expected.o')
     if not os.path.exists('outputs/expected.o'):
         raise FileNotFoundError("failed to assemble")
 
 def main():
-    # clean()
+    clean()
     assemble_base()
-    # initial_pass()
+    initial_pass()
 
-    # compiled_successfully, message = try_compile('outputs/output-0.c')
-    # compile_passes = 0
-    # while not compiled_successfully:
-    #     # handling
-    #     compile_passes += 1
-    #     print(f'starting compile pass {compile_passes}, last error message: {message}')
-    #     fix_compiler_errors(compile_passes, message)
-    #     # at the end, do it again
-    #     # TODO: change filename
-    #     compiled_successfully, message = try_compile(f'outputs/output-{compile_passes}.c')
-    #     break
-    # successful_pass = compile_passes
+    compiled_successfully, message = try_compile('outputs/output-0.c')
+    compile_passes = 0
+    while not compiled_successfully:
+        compile_passes += 1
+        print(f'starting compile pass {compile_passes}, last error message: {message}')
+        fix_compiler_errors(compile_passes, message)
+
+        compiled_successfully, message = try_compile(f'outputs/output-{compile_passes}.c')
+    successful_pass = compile_passes
     # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
-    successful_pass = 1
 
     diff_asm(successful_pass) # should just print the score
 
