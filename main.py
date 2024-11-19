@@ -1,6 +1,7 @@
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+from halo import Halo
 
 from compile import try_compile
 
@@ -44,9 +45,19 @@ def extract_c_from_openai_response(response):
     return c_code
 
 
-def initial_pass():
-    print("Querying ChatGPT for the first .c file...")
+def query_chatgpt(system_message, user_message, console_message):
+    messages = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": user_message},
+    ]
+    with Halo(text=console_message, spinner="dots"):
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL, messages=messages
+        )
+    return response
 
+
+def initial_pass():
     # TODO(sjayakar): not sure if this is the best place to open the file
     with open(M2C_OUTPUT_FILENAME, "r") as m2c_file:
         m2c_output = m2c_file.read()
@@ -54,14 +65,8 @@ def initial_pass():
     user_message = initial_pass_template.replace("${ASM}", asm)
     user_message = user_message.replace("${M2C_OUTPUT}", m2c_output)
 
-    # TODO: figure out the right abstraction with openai messages
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
-
-    response = openai_client.chat.completions.create(
-        model=OPENAI_MODEL, messages=messages
+    response = query_chatgpt(
+        system_prompt, user_message, "Querying ChatGPT for the first .c file..."
     )
 
     c_code = extract_c_from_openai_response(response)
@@ -100,14 +105,8 @@ def fix_compiler_errors(current_compile_passes: int):
     with open(f"outputs/tmp-message-{current_compile_passes}.md", "w") as msg_file:
         msg_file.write(user_message)
 
-    # TODO: figure out the right abstraction with openai messages
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
-
-    response = openai_client.chat.completions.create(
-        model=OPENAI_MODEL, messages=messages
+    response = query_chatgpt(
+        system_prompt, user_message, "Querying ChatGPT to fix compiler errors"
     )
 
     c_code = extract_c_from_openai_response(response)
@@ -141,7 +140,11 @@ def m2c():
 
 
 def compile_and_log_error(base_name):
-    compiled_successfully, message = try_compile(f"outputs/{base_name}.c")
+    with Halo(
+        text=f"Compiling",
+        spinner="dots",
+    ):
+        compiled_successfully, message = try_compile(f"outputs/{base_name}.c")
     if not compiled_successfully:
         with open(f"outputs/{base_name}.error", "w") as error_file:
             error_file.write(message)
@@ -158,7 +161,7 @@ def main():
     compile_passes = 0
     while not compiled_successfully:
         compile_passes += 1
-        print(f"did not compile, starting compile pass {compile_passes}")
+        print(f"❌ Did not compile, starting compile pass {compile_passes}")
         fix_compiler_errors(compile_passes)
 
         compiled_successfully = compile_and_log_error(f"output-{compile_passes}")
