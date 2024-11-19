@@ -2,6 +2,7 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 from halo import Halo
+import argparse
 
 from compile import try_compile
 
@@ -113,9 +114,9 @@ def fix_compiler_errors(current_compile_passes: int):
     write_c_file(current_compile_passes, c_code)
 
 
-def diff_asm(successful_pass: int):
-    os.system(f"cp outputs/temp.o asm-differ/main.o")
-    os.system(f"cp outputs/expected.o asm-differ/expected/main.o")
+def diff_asm():
+    os.system("cp outputs/temp.o asm-differ/main.o")
+    os.system("cp outputs/expected.o asm-differ/expected/main.o")
     # TODO(sjayakar): figure out how to get `f1`
     os.system("cd asm-differ && python3 diff.py -o -f main.o f1")
 
@@ -123,7 +124,7 @@ def diff_asm(successful_pass: int):
 # Convert .s to .o for eventually comparing output.o files
 def assemble_base():
     print("Assembling the .s file to get expected.o")
-    os.system(f"bin/powerpc-eabi-as -I inputs inputs/input.s")
+    os.system("bin/powerpc-eabi-as -I inputs inputs/input.s")
     os.system("mv a.out outputs/expected.o")
     if not os.path.exists("outputs/expected.o"):
         raise FileNotFoundError("failed to assemble")
@@ -151,7 +152,24 @@ def compile_and_log_error(base_name):
     return compiled_successfully
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="AI decompilation script")
+
+    parser.add_argument(
+        "--diff-only",
+        action="store_true",
+        help="Skip generation and just diff with expected",
+    )
+
+    args = parser.parse_args()
+    return args
+
+
 def main():
+    args = parse_args()
+    if args.diff_only:
+        diff_asm()
+        return
     clean()
     assemble_base()
     m2c()
