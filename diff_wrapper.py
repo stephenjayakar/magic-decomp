@@ -68,7 +68,8 @@ def diff_asm():
     mydump = diff.run_objdump(mycmd, config, project)
 
     display = diff.Display(basedump, mydump, config)
-    display.run_sync()
+    output, data = display.run_diff()
+    return output, data[1]
     os.chdir("..")
 
 

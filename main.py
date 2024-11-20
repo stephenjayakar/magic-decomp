@@ -29,6 +29,8 @@ with open("prompt-template-error.md", "r") as template_file:
     error_template = template_file.read()
 with open("error-foreach.md", "r") as template_file:
     error_foreach_template = template_file.read()
+with open("successful-chain.md", "r") as template_file:
+    successful_chain_template = template_file.read()
 
 
 def extract_c_from_openai_response(response):
@@ -162,7 +164,11 @@ def parse_args():
 def main():
     args = parse_args()
     if args.diff_only:
-        diff_asm()
+        diff_output, score = diff_asm()
+        print(f"ASM Score: {score}")
+        # TODO(sjayakar): move chain to end
+        # need c code, m2c output, and more
+        # successful_chain = successful_chain_template.replace(
         return
     clean()
     assemble_base()
