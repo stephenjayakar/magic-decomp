@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from halo import Halo
 import argparse
 
+from diff_wrapper import diff_asm
 from compile import try_compile
 
 OPENAI_MODEL = "gpt-4o-2024-08-06"
@@ -114,13 +115,6 @@ def fix_compiler_errors(current_compile_passes: int):
     write_c_file(current_compile_passes, c_code)
 
 
-def diff_asm():
-    os.system("cp outputs/temp.o asm-differ/main.o")
-    os.system("cp outputs/expected.o asm-differ/expected/main.o")
-    # TODO(sjayakar): figure out how to get `f1`
-    os.system("cd asm-differ && python3 diff.py -o -f main.o f1")
-
-
 # Convert .s to .o for eventually comparing output.o files
 def assemble_base():
     print("Assembling the .s file to get expected.o")
@@ -186,7 +180,7 @@ def main():
     successful_pass = compile_passes
     # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
 
-    diff_asm(successful_pass)  # should just print the score
+    diff_asm()
 
 
 if __name__ == "__main__":
