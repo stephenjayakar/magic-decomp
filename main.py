@@ -177,7 +177,6 @@ def main():
         fix_compiler_errors(compile_passes)
 
         compiled_successfully = compile_and_log_error(f"output-{compile_passes}")
-    successful_pass = compile_passes
     # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
 
     diff_asm()
