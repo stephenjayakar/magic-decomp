@@ -3,9 +3,11 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from halo import Halo
 import argparse
+from pathlib import Path
 
 from diff_wrapper import diff_asm
 from compile import try_compile
+from template import initial_pass_message
 
 OPENAI_MODEL = "gpt-4o-2024-08-06"
 ASM_FILENAME = "inputs/input.s"
@@ -18,19 +20,12 @@ openai_client = OpenAI(
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
 
-# Get all the initial file opening out of the way
-with open("system.txt", "r") as file:
-    system_prompt = file.read()
-with open(ASM_FILENAME, "r") as asm_file:
-    asm = asm_file.read()
-with open("prompt-template.md", "r") as template_file:
-    initial_pass_template = template_file.read()
-with open("prompt-template-error.md", "r") as template_file:
-    error_template = template_file.read()
-with open("error-foreach.md", "r") as template_file:
-    error_foreach_template = template_file.read()
-with open("successful-chain.md", "r") as template_file:
-    successful_chain_template = template_file.read()
+
+system_prompt = Path("system.txt").read_text()
+asm = Path(ASM_FILENAME).read_text()
+error_template = Path("prompt-template-error.md").read_text()
+error_foreach_template = Path("error-foreach.md").read_text()
+successful_chain_template = Path("successful-chain.md").read_text()
 
 
 def extract_c_from_openai_response(response):
@@ -66,8 +61,7 @@ def initial_pass():
     with open(M2C_OUTPUT_FILENAME, "r") as m2c_file:
         m2c_output = m2c_file.read()
 
-    user_message = initial_pass_template.replace("${ASM}", asm)
-    user_message = user_message.replace("${M2C_OUTPUT}", m2c_output)
+    user_message = initial_pass_message(asm, m2c_output)
 
     response = query_chatgpt(
         system_prompt, user_message, "Querying ChatGPT for the first .c file..."
@@ -132,7 +126,7 @@ def m2c():
     os.system(
         f"python3 ../m2c/m2c.py --target ppc-mwcc-c inputs/input.s > {M2C_OUTPUT_FILENAME}"
     )
-    if not os.path.exists("outputs/m2c-output.c"):
+    if not os.path.exists(M2C_OUTPUT_FILENAME):
         raise FileNotFoundError("m2c failed")
 
 
@@ -166,9 +160,17 @@ def main():
     if args.diff_only:
         diff_output, score = diff_asm()
         print(f"ASM Score: {score}")
-        # TODO(sjayakar): move chain to end
-        # need c code, m2c output, and more
-        # successful_chain = successful_chain_template.replace(
+        # TODO(sjayakar): move chain to end, don't hard code
+        c_code = Path("outputs/output-3.c").read_text()
+        m2c_code = Path(M2C_OUTPUT_FILENAME).read_text()
+        successful_chain = successful_chain_template.replace("${C}", c_code)
+        successful_chain = successful_chain.replace("${DIFF_TABLE}", diff_output)
+        successful_chain = successful_chain.replace("${SCORE}", str(score))
+        other_message = initial_pass_message(asm, m2c_code)
+        message = f"{other_message}\n{successful_chain}"
+        print(message)
+        response = query_chatgpt(system_prompt, message, "asking for help")
+        print(extract_c_from_openai_response(response))
         return
     clean()
     assemble_base()

@@ -69,8 +69,8 @@ def diff_asm():
 
     display = diff.Display(basedump, mydump, config)
     output, data = display.run_diff()
-    return output, data[1]
     os.chdir("..")
+    return output, data[1]
 
 
 if __name__ == "__main__":
