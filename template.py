@@ -9,7 +9,7 @@ successful_chain_template = Path("successful-chain.md").read_text()
 def _template_gen(template: str, args: dict):
     for key, value in args.items():
         template = template.replace("${" + key + "}", value)
-    assert ("$" not in template, "templating didn't replace all values")
+    assert "$" not in template, "templating didn't replace all values"
     return template
 
 
