@@ -7,7 +7,7 @@ from pathlib import Path
 
 from diff_wrapper import diff_asm
 from compile import try_compile
-from template import initial_pass_message
+import template
 
 OPENAI_MODEL = "gpt-4o-2024-08-06"
 ASM_FILENAME = "inputs/input.s"
@@ -23,9 +23,6 @@ openai_client = OpenAI(
 
 system_prompt = Path("system.txt").read_text()
 asm = Path(ASM_FILENAME).read_text()
-error_template = Path("prompt-template-error.md").read_text()
-error_foreach_template = Path("error-foreach.md").read_text()
-successful_chain_template = Path("successful-chain.md").read_text()
 
 
 def extract_c_from_openai_response(response):
@@ -61,7 +58,7 @@ def initial_pass():
     with open(M2C_OUTPUT_FILENAME, "r") as m2c_file:
         m2c_output = m2c_file.read()
 
-    user_message = initial_pass_message(asm, m2c_output)
+    user_message = template.initial_pass_message(asm, m2c_output)
 
     response = query_chatgpt(
         system_prompt, user_message, "Querying ChatGPT for the first .c file..."
@@ -89,17 +86,14 @@ def clean():
 # memory 😭.
 def fix_compiler_errors(current_compile_passes: int):
     # TODO: read all sources & error messages
-    templated_messages = []
+    c_and_errs = []
     for i in range(current_compile_passes):
         with open(f"outputs/output-{i}.c", "r") as c_file:
             c = c_file.read()
         with open(f"outputs/output-{i}.error", "r") as err_file:
             err = err_file.read()
-        message = error_foreach_template.replace("${C}", c)
-        message = message.replace("${ERRORS}", err)
-        templated_messages.append(message)
-    user_message = error_template.replace("${ASM}", asm)
-    user_message = user_message.replace("${ERRORS}", "\n\n".join(templated_messages))
+        c_and_errs.append((c, err))
+    user_message = template.error_message(asm, c_and_errs)
     with open(f"outputs/tmp-message-{current_compile_passes}.md", "w") as msg_file:
         msg_file.write(user_message)
 
@@ -163,10 +157,12 @@ def main():
         # TODO(sjayakar): move chain to end, don't hard code
         c_code = Path("outputs/output-3.c").read_text()
         m2c_code = Path(M2C_OUTPUT_FILENAME).read_text()
-        successful_chain = successful_chain_template.replace("${C}", c_code)
-        successful_chain = successful_chain.replace("${DIFF_TABLE}", diff_output)
-        successful_chain = successful_chain.replace("${SCORE}", str(score))
-        other_message = initial_pass_message(asm, m2c_code)
+        successful_chain = template.successful_chain_message(
+            c_code,
+            score,
+            diff_output,
+        )
+        other_message = template.initial_pass_message(asm, m2c_code)
         message = f"{other_message}\n{successful_chain}"
         print(message)
         response = query_chatgpt(system_prompt, message, "asking for help")
