@@ -149,29 +149,30 @@ def parse_args():
     return args
 
 
+class Code:
+    def __init__(self, filename, does_compile):
+        self.filename = filename
+        self.does_compile = does_compile
+
+# TODO(sjayakar): maybe add a state with program_state & metadata?
+STATE_INITIAL = 'INITIAL'
+STATE_ERRORS = 'ERRORS'
+STATE_CANDIDATE = 'CANDIDATE'
+
 def main():
     args = parse_args()
     if args.diff_only:
         diff_output, score = diff_asm()
         print(f"ASM Score: {score}")
-        # TODO(sjayakar): move chain to end, don't hard code
-        c_code = Path("outputs/output-3.c").read_text()
-        m2c_code = Path(M2C_OUTPUT_FILENAME).read_text()
-        successful_chain = template.successful_chain_message(
-            c_code,
-            score,
-            diff_output,
-        )
-        other_message = template.initial_pass_message(asm, m2c_code)
-        message = f"{other_message}\n{successful_chain}"
-        print(message)
-        response = query_chatgpt(system_prompt, message, "asking for help")
-        print(extract_c_from_openai_response(response))
-        return
+        print(diff_output)
     clean()
     assemble_base()
     m2c()
+
     initial_pass()
+
+    while True:
+        
 
     compiled_successfully = compile_and_log_error("output-0")
     compile_passes = 0
@@ -184,6 +185,19 @@ def main():
     # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
 
     diff_asm()
+    # c_code = Path("outputs/output-3.c").read_text()
+    # m2c_code = Path(M2C_OUTPUT_FILENAME).read_text()
+    # successful_chain = template.successful_chain_message(
+    #     c_code,
+    #     score,
+    #     diff_output,
+    # )
+    # other_message = template.initial_pass_message(asm, m2c_code)
+    # message = f"{other_message}\n{successful_chain}"
+    # print(message)
+    # response = query_chatgpt(system_prompt, message, "asking for help")
+    # print(extract_c_from_openai_response(response))
+    # return
 
 
 if __name__ == "__main__":
