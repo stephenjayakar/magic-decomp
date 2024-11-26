@@ -180,6 +180,8 @@ Candidate = namedtuple("NamedTuple", ["c_code", "diff", "score"])
 Attempt = namedtuple("Attempt", ["c_code", "errors"])
 
 
+# State machine with metadata. The program is either improving on the
+# ASM diff result or it's attempting to fix compiler errors.
 class State:
     def __init__(self):
         # Stuff that's always set
@@ -196,23 +198,25 @@ class State:
     def current_filename_prefix(self):
         return f"output-{self.filename_counter}"
 
-    def to_err(self, filename_prefix):
+    def _to_err(self, filename_prefix):
         self.state = STATE_ERRORS
         self.attempts = []
-        self.add_err(filename_prefix)
 
     def add_err(self, filename_prefix):
+        if self.state != STATE_ERRORS:
+            self._to_err()
         with open(f"outputs/{filename_prefix}.c", "r") as c_file:
             c_code = c_file.read()
         with open(f"outputs/{filename_prefix}.error", "r") as err_file:
             errs = err_file.read()
         self.attempts.append(Attempt(c_code, errs))
 
-    def to_candidate(self, filename_prefix):
+    def _to_candidate(self, filename_prefix):
         self.state = STATE_CANDIDATE
-        self.add_candidate(filename_prefix)
 
     def add_candidate(self, filename_prefix):
+        if self.state != STATE_CANDIDATE:
+            self._to_candidate()
         # TODO: assumes that the candidate was the last compiled code. Yikes!
         with open(f"outputs/{filename_prefix}.c", "r") as c_file:
             c_code = c_file.read()
@@ -240,9 +244,9 @@ def main():
     compiled_successfully = compile_and_log_error(prefix)
     state = State()
     if compiled_successfully:
-        state.to_candidate(prefix)
+        state.add_candidate(prefix)
     else:
-        state.to_err(prefix)
+        state.add_err(prefix)
 
     while True:
         state.filename_counter += 1
@@ -250,25 +254,22 @@ def main():
         if state.state == STATE_ERRORS:
             print(f"❌ Did not compile, starting compile pass {state.filename_counter}")
             fix_compiler_errors(state)
-            compiled_successfully = compile_and_log_error(filename_prefix)
-            if compiled_successfully:
-                state.to_candidate(filename_prefix)
-            else:
-                state.add_err(filename_prefix)
         elif state.state == STATE_CANDIDATE:
             last_candidate = state.candidates[-1]
             print(
                 f"✅ Code compiled. Current ASM score: {last_candidate.score}. Attempting to improve"
             )
             successful_chain(state)
-            # TODO: maybe can put this outside of if statement
-            compiled_successfully = compile_and_log_error(filename_prefix)
-            if compiled_successfully:
-                state.add_candidate(filename_prefix)
-            else:
-                state.to_err(filename_prefix)
         else:
             raise Exception(f"invalid state {state}")
+
+        # By now, the new C file has been written to disk. Attempt to
+        # compile it and then possibly state transition.
+        compiled_successfully = compile_and_log_error(filename_prefix)
+        if compiled_successfully:
+            state.add_candidate(filename_prefix)
+        else:
+            state.add_err(filename_prefix)
 
 
 if __name__ == "__main__":
