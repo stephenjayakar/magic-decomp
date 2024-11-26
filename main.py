@@ -209,7 +209,7 @@ class State:
     def current_filename_prefix(self):
         return f"output-{self.filename_counter}"
 
-    def _to_err(self, filename_prefix):
+    def _to_err(self):
         self.state = STATE_ERRORS
         self.attempts = []
 
@@ -222,7 +222,7 @@ class State:
             errs = err_file.read()
         self.attempts.append(Attempt(c_code, errs))
 
-    def _to_candidate(self, filename_prefix):
+    def _to_candidate(self):
         self.state = STATE_CANDIDATE
 
     def add_candidate(self, filename_prefix):
