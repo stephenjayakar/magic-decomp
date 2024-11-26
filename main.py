@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from halo import Halo
 import argparse
 from pathlib import Path
+from collections import namedtuple
 
 from diff_wrapper import diff_asm
 from compile import try_compile
@@ -117,7 +118,6 @@ def successful_chain(state):
 
     initial_message = template.initial_pass_message(asm, state.m2c)
     message = f"{initial_message}\n{candidate_messages}"
-    # TODO: abstract the writing out of temporary messages
     response = query_chatgpt(
         system_prompt,
         message,
@@ -174,20 +174,10 @@ def parse_args():
 
 
 # Candidate means "code that compiles and has an ASM diff"
-# TODO: maybe convert to namedtuple
-class Candidate:
-    def __init__(self, c_code, diff, score):
-        self.c_code = c_code
-        self.diff = diff
-        self.score = score
-
+Candidate = namedtuple("NamedTuple", ["c_code", "diff", "score"])
 
 # An attempt is C code & compiler errors
-# TODO: maybe move to named tuple
-class Attempt:
-    def __init__(self, c_code, errors):
-        self.c_code = c_code
-        self.errors = errors
+Attempt = namedtuple("Attempt", ["c_code", "errors"])
 
 
 class State:
@@ -230,7 +220,6 @@ class State:
         self.candidates.append(Candidate(c_code, diff_output, score))
 
 
-# TODO(sjayakar): maybe add a state with program_state & metadata?
 STATE_INITIAL = "INITIAL"
 STATE_ERRORS = "ERRORS"
 STATE_CANDIDATE = "CANDIDATE"
@@ -250,8 +239,10 @@ def main():
     prefix = "output-0"
     compiled_successfully = compile_and_log_error(prefix)
     state = State()
-    # TODO(sjayakar): I'm not sure how I feel about the clarity of using a non-eval'd function call in a ternary statement. I know via demonstration that it doesn't eval it, but it is definitely unclear.
-    state.to_candidate(prefix) if compiled_successfully else state.to_err(prefix)
+    if compiled_successfully:
+        state.to_candidate(prefix)
+    else:
+        state.to_err(prefix)
 
     while True:
         state.filename_counter += 1
@@ -278,31 +269,6 @@ def main():
                 state.to_err(filename_prefix)
         else:
             raise Exception(f"invalid state {state}")
-
-    # compiled_successfully = compile_and_log_error("output-0")
-    # compile_passes = 0
-    # while not compiled_successfully:
-    #     compile_passes += 1
-    #     print(f"❌ Did not compile, starting compile pass {compile_passes}")
-    #     fix_compiler_errors(compile_passes)
-
-    #     compiled_successfully = compile_and_log_error(f"output-{compile_passes}")
-    # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
-
-    # diff_asm()
-    # c_code = Path("outputs/output-3.c").read_text()
-    # m2c_code = Path(M2C_OUTPUT_FILENAME).read_text()
-    # successful_chain = template.successful_chain_message(
-    #     c_code,
-    #     score,
-    #     diff_output,
-    # )
-    # other_message = template.initial_pass_message(asm, m2c_code)
-    # message = f"{other_message}\n{successful_chain}"
-    # print(message)
-    # response = query_chatgpt(system_prompt, message, "asking for help")
-    # print(extract_c_from_openai_response(response))
-    # return
 
 
 if __name__ == "__main__":
