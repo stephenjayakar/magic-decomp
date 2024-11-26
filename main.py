@@ -3,9 +3,12 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from halo import Halo
 import argparse
+from pathlib import Path
+from collections import namedtuple
 
 from diff_wrapper import diff_asm
 from compile import try_compile
+import template
 
 OPENAI_MODEL = "gpt-4o-2024-08-06"
 ASM_FILENAME = "inputs/input.s"
@@ -18,17 +21,9 @@ openai_client = OpenAI(
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
 
-# Get all the initial file opening out of the way
-with open("system.txt", "r") as file:
-    system_prompt = file.read()
-with open(ASM_FILENAME, "r") as asm_file:
-    asm = asm_file.read()
-with open("prompt-template.md", "r") as template_file:
-    initial_pass_template = template_file.read()
-with open("prompt-template-error.md", "r") as template_file:
-    error_template = template_file.read()
-with open("error-foreach.md", "r") as template_file:
-    error_foreach_template = template_file.read()
+
+system_prompt = Path("system.txt").read_text()
+asm = Path(ASM_FILENAME).read_text()
 
 
 def extract_c_from_openai_response(response):
@@ -47,7 +42,9 @@ def extract_c_from_openai_response(response):
     return c_code
 
 
-def query_chatgpt(system_message, user_message, console_message):
+def query_chatgpt(system_message, user_message, console_message, filename_pass: int):
+    with open(f"outputs/tmp-message-{filename_pass}.md", "w") as msg_file:
+        msg_file.write(user_message)
     messages = [
         {"role": "system", "content": system_message},
         {"role": "user", "content": user_message},
@@ -64,11 +61,10 @@ def initial_pass():
     with open(M2C_OUTPUT_FILENAME, "r") as m2c_file:
         m2c_output = m2c_file.read()
 
-    user_message = initial_pass_template.replace("${ASM}", asm)
-    user_message = user_message.replace("${M2C_OUTPUT}", m2c_output)
+    user_message = template.initial_pass_message(asm, m2c_output)
 
     response = query_chatgpt(
-        system_prompt, user_message, "Querying ChatGPT for the first .c file..."
+        system_prompt, user_message, "Querying ChatGPT for the first .c file...", 0
     )
 
     c_code = extract_c_from_openai_response(response)
@@ -91,28 +87,46 @@ def clean():
 # TODO(sjayakar): this is silly on multiple levels. i read more and
 # more files based on # of passes, and I could have just held it in
 # memory 😭.
-def fix_compiler_errors(current_compile_passes: int):
+def fix_compiler_errors(state):
     # TODO: read all sources & error messages
-    templated_messages = []
-    for i in range(current_compile_passes):
-        with open(f"outputs/output-{i}.c", "r") as c_file:
-            c = c_file.read()
-        with open(f"outputs/output-{i}.error", "r") as err_file:
-            err = err_file.read()
-        message = error_foreach_template.replace("${C}", c)
-        message = message.replace("${ERRORS}", err)
-        templated_messages.append(message)
-    user_message = error_template.replace("${ASM}", asm)
-    user_message = user_message.replace("${ERRORS}", "\n\n".join(templated_messages))
-    with open(f"outputs/tmp-message-{current_compile_passes}.md", "w") as msg_file:
+    c_and_errs = []
+    for attempt in state.attempts:
+        c_and_errs.append((attempt.c_code, attempt.errors))
+    user_message = template.error_message(asm, c_and_errs)
+    with open(f"outputs/tmp-message-{state.filename_counter}.md", "w") as msg_file:
         msg_file.write(user_message)
 
     response = query_chatgpt(
-        system_prompt, user_message, "Querying ChatGPT to fix compiler errors"
+        system_prompt,
+        user_message,
+        "Querying ChatGPT to fix compiler errors",
+        state.filename_counter,
     )
 
     c_code = extract_c_from_openai_response(response)
-    write_c_file(current_compile_passes, c_code)
+    write_c_file(state.filename_counter, c_code)
+
+
+# Attempt to improve the score
+def successful_chain(state):
+    candidate_messages = "\n".join(
+        [
+            template.successful_chain_message(c.c_code, c.score, c.diff)
+            for c in state.candidates
+        ]
+    )
+
+    initial_message = template.initial_pass_message(asm, state.m2c)
+    message = f"{initial_message}\n{candidate_messages}"
+    response = query_chatgpt(
+        system_prompt,
+        message,
+        "Querying ChatGPT to improve the ASM score",
+        state.filename_counter,
+    )
+
+    c_code = extract_c_from_openai_response(response)
+    write_c_file(state.filename_counter, c_code)
 
 
 # Convert .s to .o for eventually comparing output.o files
@@ -130,7 +144,7 @@ def m2c():
     os.system(
         f"python3 ../m2c/m2c.py --target ppc-mwcc-c inputs/input.s > {M2C_OUTPUT_FILENAME}"
     )
-    if not os.path.exists("outputs/m2c-output.c"):
+    if not os.path.exists(M2C_OUTPUT_FILENAME):
         raise FileNotFoundError("m2c failed")
 
 
@@ -159,27 +173,103 @@ def parse_args():
     return args
 
 
+# Candidate means "code that compiles and has an ASM diff"
+Candidate = namedtuple("NamedTuple", ["c_code", "diff", "score"])
+
+# An attempt is C code & compiler errors
+Attempt = namedtuple("Attempt", ["c_code", "errors"])
+
+
+# State machine with metadata. The program is either improving on the
+# ASM diff result or it's attempting to fix compiler errors.
+class State:
+    def __init__(self):
+        # Stuff that's always set
+        self.state = STATE_INITIAL
+        self.filename_counter = 0
+        # Read in all the other stuff
+        with open(M2C_OUTPUT_FILENAME, "r") as m2c_file:
+            self.m2c = m2c_file.read()
+        with open("outputs/output-0.c", "r") as initial_pass_file:
+            self.initial_pass = initial_pass_file.read()
+
+        self.candidates = []
+
+    def current_filename_prefix(self):
+        return f"output-{self.filename_counter}"
+
+    def _to_err(self, filename_prefix):
+        self.state = STATE_ERRORS
+        self.attempts = []
+
+    def add_err(self, filename_prefix):
+        if self.state != STATE_ERRORS:
+            self._to_err()
+        with open(f"outputs/{filename_prefix}.c", "r") as c_file:
+            c_code = c_file.read()
+        with open(f"outputs/{filename_prefix}.error", "r") as err_file:
+            errs = err_file.read()
+        self.attempts.append(Attempt(c_code, errs))
+
+    def _to_candidate(self, filename_prefix):
+        self.state = STATE_CANDIDATE
+
+    def add_candidate(self, filename_prefix):
+        if self.state != STATE_CANDIDATE:
+            self._to_candidate()
+        # TODO: assumes that the candidate was the last compiled code. Yikes!
+        with open(f"outputs/{filename_prefix}.c", "r") as c_file:
+            c_code = c_file.read()
+        diff_output, score = diff_asm()
+        self.candidates.append(Candidate(c_code, diff_output, score))
+
+
+STATE_INITIAL = "INITIAL"
+STATE_ERRORS = "ERRORS"
+STATE_CANDIDATE = "CANDIDATE"
+
+
 def main():
     args = parse_args()
     if args.diff_only:
-        diff_asm()
-        return
+        diff_output, score = diff_asm()
+        print(f"ASM Score: {score}")
+        print(diff_output)
     clean()
     assemble_base()
     m2c()
+
     initial_pass()
+    prefix = "output-0"
+    compiled_successfully = compile_and_log_error(prefix)
+    state = State()
+    if compiled_successfully:
+        state.add_candidate(prefix)
+    else:
+        state.add_err(prefix)
 
-    compiled_successfully = compile_and_log_error("output-0")
-    compile_passes = 0
-    while not compiled_successfully:
-        compile_passes += 1
-        print(f"❌ Did not compile, starting compile pass {compile_passes}")
-        fix_compiler_errors(compile_passes)
+    while True:
+        state.filename_counter += 1
+        filename_prefix = state.current_filename_prefix()
+        if state.state == STATE_ERRORS:
+            print(f"❌ Did not compile, starting compile pass {state.filename_counter}")
+            fix_compiler_errors(state)
+        elif state.state == STATE_CANDIDATE:
+            last_candidate = state.candidates[-1]
+            print(
+                f"✅ Code compiled. Current ASM score: {last_candidate.score}. Attempting to improve"
+            )
+            successful_chain(state)
+        else:
+            raise Exception(f"invalid state {state}")
 
-        compiled_successfully = compile_and_log_error(f"output-{compile_passes}")
-    # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
-
-    diff_asm()
+        # By now, the new C file has been written to disk. Attempt to
+        # compile it and then possibly state transition.
+        compiled_successfully = compile_and_log_error(filename_prefix)
+        if compiled_successfully:
+            state.add_candidate(filename_prefix)
+        else:
+            state.add_err(filename_prefix)
 
 
 if __name__ == "__main__":
