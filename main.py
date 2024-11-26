@@ -26,6 +26,17 @@ system_prompt = Path("system.txt").read_text()
 asm = Path(ASM_FILENAME).read_text()
 
 
+# We need this for the asm differ, as it doesn't just diff the whole file.
+def get_first_function_asm(asm):
+    first_fn_index = asm.find(".fn")
+    slc = asm[first_fn_index + len(".fn ") :]
+    fn_name_end_index = slc.find(",")
+    return slc[:fn_name_end_index]
+
+
+first_function_name = get_first_function_asm(asm)
+
+
 def extract_c_from_openai_response(response):
     # Extract the output message
     output_message = response.choices[0].message.content
@@ -132,7 +143,7 @@ def successful_chain(state):
 # Convert .s to .o for eventually comparing output.o files
 def assemble_base():
     print("Assembling the .s file to get expected.o")
-    os.system("bin/powerpc-eabi-as -I inputs inputs/input.s")
+    os.system(f"bin/powerpc-eabi-as -I inputs {ASM_FILENAME}")
     os.system("mv a.out outputs/expected.o")
     if not os.path.exists("outputs/expected.o"):
         raise FileNotFoundError("failed to assemble")
@@ -142,7 +153,7 @@ def assemble_base():
 def m2c():
     print("Running m2c...")
     os.system(
-        f"python3 ../m2c/m2c.py --target ppc-mwcc-c inputs/input.s > {M2C_OUTPUT_FILENAME}"
+        f"python3 ../m2c/m2c.py --target ppc-mwcc-c {ASM_FILENAME} > {M2C_OUTPUT_FILENAME}"
     )
     if not os.path.exists(M2C_OUTPUT_FILENAME):
         raise FileNotFoundError("m2c failed")
@@ -220,7 +231,7 @@ class State:
         # TODO: assumes that the candidate was the last compiled code. Yikes!
         with open(f"outputs/{filename_prefix}.c", "r") as c_file:
             c_code = c_file.read()
-        diff_output, score = diff_asm()
+        diff_output, score = diff_asm(first_function_name)
         self.candidates.append(Candidate(c_code, diff_output, score))
 
 
@@ -232,9 +243,10 @@ STATE_CANDIDATE = "CANDIDATE"
 def main():
     args = parse_args()
     if args.diff_only:
-        diff_output, score = diff_asm()
+        diff_output, score = diff_asm(first_function_name)
         print(f"ASM Score: {score}")
         print(diff_output)
+        return
     clean()
     assemble_base()
     m2c()

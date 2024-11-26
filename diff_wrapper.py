@@ -1,7 +1,7 @@
 import os
 from asm_differ import diff
+import sys
 
-START = "f1"
 FILENAME = "main.o"
 
 default_source_old_binutils = False
@@ -58,13 +58,12 @@ config = diff.Config(
 )
 
 
-# TODO(sjayakar): figure out how to get `f1`. Right now is hardcoded
-def diff_asm():
+def diff_asm(first_function_name: str):
     os.system("cp outputs/temp.o asm_differ/main.o")
     os.system("cp outputs/expected.o asm_differ/expected/main.o")
     os.chdir("asm_differ")
 
-    make_target, basecmd, mycmd = diff.dump_objfile(START, None, config, project)
+    make_target, basecmd, mycmd = diff.dump_objfile(first_function_name, None, config, project)
     basedump = diff.run_objdump(basecmd, config, project)
     mydump = diff.run_objdump(mycmd, config, project)
 
@@ -75,4 +74,4 @@ def diff_asm():
 
 
 if __name__ == "__main__":
-    diff_asm()
+    diff_asm(sys.argv[1])
