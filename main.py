@@ -41,7 +41,9 @@ def extract_c_from_openai_response(response):
     return c_code
 
 
-def query_chatgpt(system_message, user_message, console_message):
+def query_chatgpt(system_message, user_message, console_message, filename_pass: int):
+    with open(f"outputs/tmp-message-{filename_pass}.md", "w") as msg_file:
+        msg_file.write(user_message)
     messages = [
         {"role": "system", "content": system_message},
         {"role": "user", "content": user_message},
@@ -61,7 +63,7 @@ def initial_pass():
     user_message = template.initial_pass_message(asm, m2c_output)
 
     response = query_chatgpt(
-        system_prompt, user_message, "Querying ChatGPT for the first .c file..."
+        system_prompt, user_message, "Querying ChatGPT for the first .c file...", 0
     )
 
     c_code = extract_c_from_openai_response(response)
@@ -94,7 +96,10 @@ def fix_compiler_errors(state):
         msg_file.write(user_message)
 
     response = query_chatgpt(
-        system_prompt, user_message, "Querying ChatGPT to fix compiler errors"
+        system_prompt,
+        user_message,
+        "Querying ChatGPT to fix compiler errors",
+        state.filename_counter,
     )
 
     c_code = extract_c_from_openai_response(response)
@@ -113,10 +118,11 @@ def successful_chain(state):
     initial_message = template.initial_pass_message(asm, state.m2c)
     message = f"{initial_message}\n{candidate_messages}"
     # TODO: abstract the writing out of temporary messages
-    with open(f"outputs/tmp-message-{state.filename_counter}.md", "w") as msg_file:
-        msg_file.write(message)
     response = query_chatgpt(
-        system_prompt, message, "Querying ChatGPT to improve the ASM score"
+        system_prompt,
+        message,
+        "Querying ChatGPT to improve the ASM score",
+        state.filename_counter,
     )
 
     c_code = extract_c_from_openai_response(response)
