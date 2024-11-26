@@ -84,17 +84,13 @@ def clean():
 # TODO(sjayakar): this is silly on multiple levels. i read more and
 # more files based on # of passes, and I could have just held it in
 # memory 😭.
-def fix_compiler_errors(current_compile_passes: int):
+def fix_compiler_errors(state):
     # TODO: read all sources & error messages
     c_and_errs = []
-    for i in range(current_compile_passes):
-        with open(f"outputs/output-{i}.c", "r") as c_file:
-            c = c_file.read()
-        with open(f"outputs/output-{i}.error", "r") as err_file:
-            err = err_file.read()
-        c_and_errs.append((c, err))
+    for attempt in state.attempts:
+        c_and_errs.append((attempt.c_code, attempt.errors))
     user_message = template.error_message(asm, c_and_errs)
-    with open(f"outputs/tmp-message-{current_compile_passes}.md", "w") as msg_file:
+    with open(f"outputs/tmp-message-{state.filename_counter}.md", "w") as msg_file:
         msg_file.write(user_message)
 
     response = query_chatgpt(
@@ -102,7 +98,29 @@ def fix_compiler_errors(current_compile_passes: int):
     )
 
     c_code = extract_c_from_openai_response(response)
-    write_c_file(current_compile_passes, c_code)
+    write_c_file(state.filename_counter, c_code)
+
+
+# Attempt to improve the score
+def successful_chain(state):
+    candidate_messages = "\n".join(
+        [
+            template.successful_chain_message(c.c_code, c.score, c.diff)
+            for c in state.candidates
+        ]
+    )
+
+    initial_message = template.initial_pass_message(asm, state.m2c)
+    message = f"{initial_message}\n{candidate_messages}"
+    # TODO: abstract the writing out of temporary messages
+    with open(f"outputs/tmp-message-{state.filename_counter}.md", "w") as msg_file:
+        msg_file.write(message)
+    response = query_chatgpt(
+        system_prompt, message, "Querying ChatGPT to improve the ASM score"
+    )
+
+    c_code = extract_c_from_openai_response(response)
+    write_c_file(state.filename_counter, c_code)
 
 
 # Convert .s to .o for eventually comparing output.o files
@@ -149,15 +167,68 @@ def parse_args():
     return args
 
 
-class Code:
-    def __init__(self, filename, does_compile):
-        self.filename = filename
-        self.does_compile = does_compile
+# Candidate means "code that compiles and has an ASM diff"
+# TODO: maybe convert to namedtuple
+class Candidate:
+    def __init__(self, c_code, diff, score):
+        self.c_code = c_code
+        self.diff = diff
+        self.score = score
+
+
+# An attempt is C code & compiler errors
+# TODO: maybe move to named tuple
+class Attempt:
+    def __init__(self, c_code, errors):
+        self.c_code = c_code
+        self.errors = errors
+
+
+class State:
+    def __init__(self):
+        # Stuff that's always set
+        self.state = STATE_INITIAL
+        self.filename_counter = 0
+        # Read in all the other stuff
+        with open(M2C_OUTPUT_FILENAME, "r") as m2c_file:
+            self.m2c = m2c_file.read()
+        with open("outputs/output-0.c", "r") as initial_pass_file:
+            self.initial_pass = initial_pass_file.read()
+
+        self.candidates = []
+
+    def current_filename_prefix(self):
+        return f"output-{self.filename_counter}"
+
+    def to_err(self, filename_prefix):
+        self.state = STATE_ERRORS
+        self.attempts = []
+        self.add_err(filename_prefix)
+
+    def add_err(self, filename_prefix):
+        with open(f"outputs/{filename_prefix}.c", "r") as c_file:
+            c_code = c_file.read()
+        with open(f"outputs/{filename_prefix}.error", "r") as err_file:
+            errs = err_file.read()
+        self.attempts.append(Attempt(c_code, errs))
+
+    def to_candidate(self, filename_prefix):
+        self.state = STATE_CANDIDATE
+        self.add_candidate(filename_prefix)
+
+    def add_candidate(self, filename_prefix):
+        # TODO: assumes that the candidate was the last compiled code. Yikes!
+        with open(f"outputs/{filename_prefix}.c", "r") as c_file:
+            c_code = c_file.read()
+        diff_output, score = diff_asm()
+        self.candidates.append(Candidate(c_code, diff_output, score))
+
 
 # TODO(sjayakar): maybe add a state with program_state & metadata?
-STATE_INITIAL = 'INITIAL'
-STATE_ERRORS = 'ERRORS'
-STATE_CANDIDATE = 'CANDIDATE'
+STATE_INITIAL = "INITIAL"
+STATE_ERRORS = "ERRORS"
+STATE_CANDIDATE = "CANDIDATE"
+
 
 def main():
     args = parse_args()
@@ -170,21 +241,49 @@ def main():
     m2c()
 
     initial_pass()
+    prefix = "output-0"
+    compiled_successfully = compile_and_log_error(prefix)
+    state = State()
+    # TODO(sjayakar): I'm not sure how I feel about the clarity of using a non-eval'd function call in a ternary statement. I know via demonstration that it doesn't eval it, but it is definitely unclear.
+    state.to_candidate(prefix) if compiled_successfully else state.to_err(prefix)
 
     while True:
-        
+        state.filename_counter += 1
+        filename_prefix = state.current_filename_prefix()
+        if state.state == STATE_ERRORS:
+            print(f"❌ Did not compile, starting compile pass {state.filename_counter}")
+            fix_compiler_errors(state)
+            compiled_successfully = compile_and_log_error(filename_prefix)
+            if compiled_successfully:
+                state.to_candidate(filename_prefix)
+            else:
+                state.add_err(filename_prefix)
+        elif state.state == STATE_CANDIDATE:
+            last_candidate = state.candidates[-1]
+            print(
+                f"✅ Code compiled. Current ASM score: {last_candidate.score}. Attempting to improve"
+            )
+            successful_chain(state)
+            # TODO: maybe can put this outside of if statement
+            compiled_successfully = compile_and_log_error(filename_prefix)
+            if compiled_successfully:
+                state.add_candidate(filename_prefix)
+            else:
+                state.to_err(filename_prefix)
+        else:
+            raise Exception(f"invalid state {state}")
 
-    compiled_successfully = compile_and_log_error("output-0")
-    compile_passes = 0
-    while not compiled_successfully:
-        compile_passes += 1
-        print(f"❌ Did not compile, starting compile pass {compile_passes}")
-        fix_compiler_errors(compile_passes)
+    # compiled_successfully = compile_and_log_error("output-0")
+    # compile_passes = 0
+    # while not compiled_successfully:
+    #     compile_passes += 1
+    #     print(f"❌ Did not compile, starting compile pass {compile_passes}")
+    #     fix_compiler_errors(compile_passes)
 
-        compiled_successfully = compile_and_log_error(f"output-{compile_passes}")
+    #     compiled_successfully = compile_and_log_error(f"output-{compile_passes}")
     # TODO(sjayakar): successful compile should have generated temp.o. consider refactoring to generate an overrideable output
 
-    diff_asm()
+    # diff_asm()
     # c_code = Path("outputs/output-3.c").read_text()
     # m2c_code = Path(M2C_OUTPUT_FILENAME).read_text()
     # successful_chain = template.successful_chain_message(
