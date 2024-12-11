@@ -1,10 +1,21 @@
 # [WIP] How to use this
 
-This is not ready for consumption
+I have a `.env` file with `OPENAI_API_KEY=`
 
-* insert in `asm-differ` lib into this folder
-* `python3 main.py` with a `inputs/input.s`
-* using dtk macros.inc in the `melee` repo. put in `inputs` folder
+**compile.py**: This allows you to compile a C file with `mwcc`. It'll output a `temp.o` file and a `temp.s` file
+* `mwcceppc.exe` needs to be in `bin`. You also need `wine` installed
+* You need `ppc-linux-objdump` installed & in PATH
+
+**diff_wrapper.py**: Not really intended to be called by itself, but how I get the score & ASM diff between two ASM files
+* well, actually OBJ files
+* it expects there to be `outputs/temp.o` and `outputs/expected.o`
+* you also have to download https://github.com/simonlindholm/asm-differ and put it in this folder as a folder. Sorry not sorry
+
+**main.py**: where the magic happens. Takes in an ASM file and attempts to come up with C code in `/outputs`
+* requires a `input.s` file and _probably_ `.include "macros.inc"` from `dtk`
+  * I put the `macros.inc` in the `inputs` folder
+* requires ChatGPT API access
+* probably only runs on Mac 🤷‍♂️
 
 # Further explorations
 
